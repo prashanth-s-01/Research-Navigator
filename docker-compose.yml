@@ -9,11 +9,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - APP_ENV=${APP_ENV}
+      - APP_ENV=${APP_ENV:-development}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL}
-      - LOG_LEVEL=${LOG_LEVEL}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - PAGEINDEX_API_KEY=${PAGEINDEX_API_KEY:?PAGEINDEX_API_KEY is required}
+      - PAGEINDEX_MODE=${PAGEINDEX_MODE:-mcp}
+      - PAGEINDEX_POLL_ATTEMPTS=${PAGEINDEX_POLL_ATTEMPTS:-20}
+      - PAGEINDEX_POLL_INTERVAL_SECONDS=${PAGEINDEX_POLL_INTERVAL_SECONDS:-2}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - STORAGE_PATH=/app/shared
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
     volumes:
       - ./shared:/app/shared
 
@@ -26,8 +31,8 @@ services:
       - "8501:8501"
     environment:
       - BACKEND_URL=http://backend:8000
-      - APP_ENV=${APP_ENV}
-      - LOG_LEVEL=${LOG_LEVEL}
+      - APP_ENV=${APP_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./shared:/app/shared
     depends_on:
