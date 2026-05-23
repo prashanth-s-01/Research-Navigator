@@ -2,4 +2,6 @@
 .env
 
 # Runtime files
-shared/pdfs/*
+shared/pdfs/
+shared/indexes/
+__pycache__/
