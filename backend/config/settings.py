@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     groq_api_key: str
     groq_model: str = "llama-3.3-70b-versatile"
     storage_path: str = "/app/shared"
+    max_upload_size_mb: int = 100
 
 
 settings = Settings()
+MAX_UPLOAD_BYTES = settings.max_upload_size_mb * 1024 * 1024
