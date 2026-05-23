@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from models.schemas import ApiError
@@ -46,7 +47,7 @@ class BackendError(Exception):
         self,
         error_type: str,
         message: str,
-        detail: str | None = None,
+        detail: Optional[str] = None,
         status_code: int = status.HTTP_400_BAD_REQUEST,
     ):
         self.error_type = error_type
