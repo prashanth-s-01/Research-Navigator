@@ -1,0 +1,34 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: research-navigator-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=${APP_ENV}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - STORAGE_PATH=/app/shared
+    volumes:
+      - ./shared:/app/shared
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: research-navigator-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - APP_ENV=${APP_ENV}
+      - LOG_LEVEL=${LOG_LEVEL}
+    volumes:
+      - ./shared:/app/shared
+    depends_on:
+      - backend
