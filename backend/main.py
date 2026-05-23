@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from api.health import router as health_router
 from api.upload import router as upload_router
@@ -7,11 +8,13 @@ from utils.logging_utils import configure_logging
 from utils.exception_handlers import register_exception_handlers
 
 configure_logging(settings)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Research Navigator API",
     description="Backend API for research paper indexing and question answering.",
     version="0.1.0",
+    debug=settings.app_env == "development",
 )
 
 app.include_router(health_router, prefix="", tags=["health"])
@@ -23,3 +26,6 @@ register_exception_handlers(app)
 @app.on_event("startup")
 def startup_event() -> None:
     app.state.storage_path = settings.storage_path
+    logger.info(f"Research Navigator API starting up (env={settings.app_env})")
+    logger.info(f"Storage path: {settings.storage_path}")
+    logger.info(f"Max upload size: {settings.max_upload_size_mb} MB")
