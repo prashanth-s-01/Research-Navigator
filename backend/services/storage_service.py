@@ -17,7 +17,7 @@ class StorageService:
         self.base_path = Path(base_path)
         self.pdfs_dir = self.base_path / "pdfs"
         self.indexes_dir = self.base_path / "indexes"
-        
+
         self.pdfs_dir.mkdir(parents=True, exist_ok=True)
         self.indexes_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Storage service initialized at {self.base_path}")
@@ -28,7 +28,17 @@ class StorageService:
 
     def get_index_path(self, document_id: str) -> Path:
         """Get the file path for a document index."""
+        # Default index file (deprecated); prefer get_index_dir
         return self.indexes_dir / f"{document_id}.json"
+
+    def get_index_dir(self, document_id: str) -> Path:
+        """Get the folder path where index artifacts for a document are stored."""
+        return self.indexes_dir / document_id
+
+    def ensure_index_dir(self, document_id: str) -> Path:
+        path = self.get_index_dir(document_id)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def document_exists(self, document_id: str) -> bool:
         """Check if a document exists in storage."""

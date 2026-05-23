@@ -1,9 +1,10 @@
 import logging
 import uuid
-from fastapi import APIRouter, UploadFile, File, status
+from fastapi import APIRouter, UploadFile, File, status, BackgroundTasks
 
 from models.schemas import UploadResponse
 from services.storage_service import StorageService
+from services.indexing_service import IndexingService
 from utils.file_utils import validate_pdf_file, save_uploaded_file
 from utils.exception_handlers import BackendError
 from config.settings import settings
@@ -12,10 +13,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 storage_service = StorageService(settings.storage_path)
+indexing_service = IndexingService(storage=storage_service)
 
 
 @router.post("/pdf", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...)) -> UploadResponse:
     """
     Upload a PDF file for document indexing.
     
@@ -74,10 +76,24 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    # Schedule indexing in the background (non-blocking)
+    background_tasks.add_task(self_or_index_task, document_id)
+
     return UploadResponse(
         document_id=document_id,
         filename=filename,
         status="uploaded",
         size_bytes=len(file_data),
-        message="PDF uploaded successfully. Ready for indexing.",
+        message="PDF uploaded successfully. Indexing scheduled.",
     )
+
+
+def self_or_index_task(document_id: str) -> None:
+    """Helper wrapper to call indexing service from BackgroundTasks (sync context)."""
+    try:
+        # IndexingService.build_index is async; run it in a new event loop
+        import asyncio
+
+        asyncio.run(indexing_service.build_index(document_id))
+    except Exception:
+        logger.exception("Background indexing task failed for document %s", document_id)
