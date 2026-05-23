@@ -15,9 +15,11 @@ class HealthResponse(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    success: bool
     document_id: str
-    message: str
+    filename: str
+    status: str = "uploaded"
+    size_bytes: int
+    message: Optional[str] = None
 
 
 class QueryRequest(BaseModel):
