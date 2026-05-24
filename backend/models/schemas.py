@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 
 class ApiError(BaseModel):
@@ -27,8 +27,13 @@ class QueryRequest(BaseModel):
     question: str
 
 
+class Citation(BaseModel):
+    section: str
+    page: Optional[int] = None
+
+
 class QueryResponse(BaseModel):
     success: bool
     answer: str
-    citations: list[str] = []
-    trace: Optional[str] = None
+    trace: List[str] = []
+    citations: List[Citation] = []

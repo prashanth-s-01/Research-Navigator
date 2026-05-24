@@ -56,9 +56,21 @@ if submitted:
                 st.markdown("### Answer")
                 st.write(answer.get("answer"))
                 st.markdown("### Citations")
-                st.write(answer.get("citations") or "No citations available yet.")
+                citations = answer.get("citations") or []
+                if citations:
+                    for citation in citations:
+                        section = citation.get("section")
+                        page = citation.get("page")
+                        st.write(f"- {section}" + (f", page {page}" if page is not None else ""))
+                else:
+                    st.write("No citations available yet.")
+
                 st.markdown("### Retrieval Trace")
-                st.text(answer.get("trace") or "No trace available yet.")
+                trace = answer.get("trace") or []
+                if isinstance(trace, list) and trace:
+                    st.write(" → ".join(trace))
+                else:
+                    st.write("No trace available yet.")
             else:
                 show_warning(answer.get("answer", "No answer returned."))
         except BackendClientError as exc:

@@ -1,13 +1,17 @@
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
 from pageindex import PageIndexAPIError, PageIndexClient
 
 from services.llm_service import LLMService
-from services.prompt_utils import build_groq_prompt, extract_retrieval_snippets
+from services.prompt_utils import (
+    build_groq_prompt,
+    extract_retrieval_snippets,
+)
 from services.storage_service import StorageService
 from config.settings import settings
 from utils.exception_handlers import BackendError
@@ -52,10 +56,24 @@ class RetrievalService:
             )
 
         retrieval_result = await asyncio.to_thread(self._wait_for_retrieval, retrieval_id)
-        citations = self._extract_citations(retrieval_result)
-        trace = self._extract_trace(retrieval_result)
+        retrieved_nodes = self._extract_retrieved_nodes(retrieval_result)
+        if not retrieved_nodes:
+            raise BackendError(
+                error_type="EMPTY_RETRIEVAL",
+                message="No relevant document sections were found for this query.",
+                detail=json.dumps(retrieval_result, default=str),
+                status_code=404,
+            )
+
+        citations = self._extract_citations(retrieved_nodes)
+        trace = self._extract_trace(retrieved_nodes)
         snippets = extract_retrieval_snippets(retrieval_result)
-        prompt = build_groq_prompt(question, snippets, citations)
+        prompt = build_groq_prompt(
+            question=question,
+            snippets=snippets,
+            trace=trace,
+            citations=citations,
+        )
 
         answer = await self.llm_service.generate(
             prompt=prompt,
@@ -65,7 +83,7 @@ class RetrievalService:
         )
 
         return {
-            "answer": answer.strip(),
+            "answer": answer.strip() or "No answer could be generated from the retrieved context.",
             "citations": citations,
             "trace": trace,
         }
@@ -140,40 +158,70 @@ class RetrievalService:
             message="PageIndex retrieval did not complete in time.",
         )
 
-    def _extract_citations(self, retrieval: Dict[str, Any]) -> List[str]:
-        citations = []
-        if retrieval.get("citations"):
-            citations = retrieval["citations"]
-        elif retrieval.get("sources"):
-            citations = retrieval["sources"]
-        elif retrieval.get("references"):
-            citations = retrieval["references"]
-
-        if isinstance(citations, list):
-            extracted = [str(item) for item in citations]
-        elif citations:
-            extracted = [str(citations)]
-        else:
-            extracted = []
-
+    def _extract_retrieved_nodes(self, retrieval: Dict[str, Any]) -> List[Dict[str, Any]]:
         retrieved_nodes = retrieval.get("retrieved_nodes")
         if isinstance(retrieved_nodes, list):
-            for node in retrieved_nodes:
-                if not isinstance(node, dict):
-                    continue
-                node_id = node.get("id")
-                title = node.get("title")
-                if title and node_id:
-                    extracted.append(f"{title} ({node_id})")
-                elif title:
-                    extracted.append(str(title))
-                elif node_id:
-                    extracted.append(str(node_id))
+            return [node for node in retrieved_nodes if isinstance(node, dict)]
 
-        return list(dict.fromkeys(item for item in extracted if item))
+        node = retrieval.get("retrieval")
+        if isinstance(node, dict) and isinstance(node.get("retrieved_nodes"), list):
+            return [item for item in node.get("retrieved_nodes") if isinstance(item, dict)]
 
-    def _extract_trace(self, retrieval: Dict[str, Any]) -> str:
-        trace_value = retrieval.get("trace") or retrieval.get("debug") or retrieval.get("details")
-        if isinstance(trace_value, str):
-            return trace_value
-        return json.dumps(retrieval, ensure_ascii=False, indent=2)
+        return []
+
+    def _extract_citations(self, nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        citations: List[Dict[str, Any]] = []
+        seen: set = set()
+
+        for node in nodes:
+            section = node.get("title") or node.get("section_title") or str(node.get("id", "Unknown"))
+            page = self._parse_page_number(node)
+            citation = {"section": str(section), "page": page}
+            citation_key = (section, page)
+            if citation_key not in seen:
+                citations.append(citation)
+                seen.add(citation_key)
+
+        return citations
+
+    def _extract_trace(self, nodes: List[Dict[str, Any]]) -> List[str]:
+        trace: List[str] = []
+        for node in nodes:
+            title = node.get("title") or node.get("section_title") or str(node.get("id", "Unknown"))
+            if isinstance(title, str) and title.strip():
+                trace.append(title.strip())
+                continue
+
+            relevant_contents = node.get("relevant_contents")
+            if isinstance(relevant_contents, list):
+                for group in relevant_contents:
+                    items = group if isinstance(group, list) else [group]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("section_title"):
+                            trace.append(str(item["section_title"]).strip())
+
+        return [part for part in trace if part]
+
+    def _parse_page_number(self, node: Dict[str, Any]) -> Optional[int]:
+        page_value = None
+        if isinstance(node.get("physical_index"), str):
+            page_value = node["physical_index"]
+        elif isinstance(node.get("page"), (str, int)):
+            page_value = node.get("page")
+
+        if isinstance(page_value, int):
+            return page_value
+        if isinstance(page_value, str):
+            match = re.search(r"(\d+)", page_value)
+            if match:
+                return int(match.group(1))
+
+        metadata = node.get("metadata")
+        if isinstance(metadata, list):
+            for value in metadata:
+                if isinstance(value, str):
+                    match = re.search(r"(\d+)", value)
+                    if match:
+                        return int(match.group(1))
+
+        return None
