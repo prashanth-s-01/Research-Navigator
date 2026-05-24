@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -5,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from pageindex import PageIndexAPIError, PageIndexClient
 
+from services.llm_service import LLMService
+from services.prompt_utils import build_groq_prompt, extract_retrieval_snippets
 from services.storage_service import StorageService
 from config.settings import settings
 from utils.exception_handlers import BackendError
@@ -13,13 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 class RetrievalService:
-    """Retrieve answers from PageIndex using persisted document indexes."""
+    """Retrieve answers from PageIndex and use Groq to generate a final response."""
 
-    def __init__(self, storage: Optional[StorageService] = None, client: Optional[PageIndexClient] = None):
+    def __init__(
+        self,
+        storage: Optional[StorageService] = None,
+        client: Optional[PageIndexClient] = None,
+        llm_service: Optional[LLMService] = None,
+    ):
         self.storage = storage or StorageService(settings.storage_path)
         self.client = client or PageIndexClient(settings.pageindex_api_key)
+        self.llm_service = llm_service or LLMService(
+            api_key=settings.groq_api_key,
+            model_name=settings.groq_model,
+        )
 
-    def retrieve(self, document_id: str, question: str) -> dict:
+    async def retrieve(self, document_id: str, question: str) -> dict:
         metadata = self._load_metadata(document_id)
         pageindex_doc_id = metadata.get("pageindex_doc_id")
 
@@ -30,16 +42,7 @@ class RetrievalService:
                 detail="metadata.json missing pageindex_doc_id",
             )
 
-        try:
-            submission = self.client.submit_query(pageindex_doc_id, question, thinking=True)
-        except PageIndexAPIError as exc:
-            logger.exception("PageIndex submit_query failed")
-            raise BackendError(
-                error_type="PAGEINDEX_RETRIEVAL_FAILED",
-                message="Failed to submit query to PageIndex.",
-                detail=str(exc),
-            )
-
+        submission = await asyncio.to_thread(self._submit_query, pageindex_doc_id, question)
         retrieval_id = self._extract_retrieval_id(submission)
         if not retrieval_id:
             raise BackendError(
@@ -48,16 +51,35 @@ class RetrievalService:
                 detail=json.dumps(submission, default=str),
             )
 
-        retrieval_result = self._wait_for_retrieval(retrieval_id)
-        answer = self._extract_answer(retrieval_result)
+        retrieval_result = await asyncio.to_thread(self._wait_for_retrieval, retrieval_id)
         citations = self._extract_citations(retrieval_result)
         trace = self._extract_trace(retrieval_result)
+        snippets = extract_retrieval_snippets(retrieval_result)
+        prompt = build_groq_prompt(question, snippets, citations)
+
+        answer = await self.llm_service.generate(
+            prompt=prompt,
+            max_output_tokens=settings.groq_max_output_tokens,
+            temperature=settings.groq_temperature,
+            top_p=settings.groq_top_p,
+        )
 
         return {
-            "answer": answer,
+            "answer": answer.strip(),
             "citations": citations,
             "trace": trace,
         }
+
+    def _submit_query(self, pageindex_doc_id: str, question: str) -> Dict[str, Any]:
+        try:
+            return self.client.submit_query(pageindex_doc_id, question, thinking=True)
+        except PageIndexAPIError as exc:
+            logger.exception("PageIndex submit_query failed")
+            raise BackendError(
+                error_type="PAGEINDEX_RETRIEVAL_FAILED",
+                message="Failed to submit query to PageIndex.",
+                detail=str(exc),
+            )
 
     def _load_metadata(self, document_id: str) -> Dict[str, Any]:
         index_dir = self.storage.get_index_dir(document_id)
@@ -118,29 +140,6 @@ class RetrievalService:
             message="PageIndex retrieval did not complete in time.",
         )
 
-    def _extract_answer(self, retrieval: Dict[str, Any]) -> str:
-        if retrieval.get("answer"):
-            return retrieval["answer"]
-
-        if isinstance(retrieval.get("retrieval"), dict):
-            nested = retrieval["retrieval"]
-            return nested.get("answer") or nested.get("result") or nested.get("text") or "No answer available."
-
-        if retrieval.get("result"):
-            result = retrieval["result"]
-            if isinstance(result, dict):
-                return result.get("answer") or result.get("text") or "No answer available."
-
-        if retrieval.get("content"):
-            return retrieval["content"]
-
-        if retrieval.get("results") and isinstance(retrieval["results"], list):
-            first = retrieval["results"][0]
-            if isinstance(first, dict):
-                return first.get("answer") or first.get("text") or "No answer available."
-
-        return "No answer available."
-
     def _extract_citations(self, retrieval: Dict[str, Any]) -> List[str]:
         citations = []
         if retrieval.get("citations"):
@@ -151,8 +150,27 @@ class RetrievalService:
             citations = retrieval["references"]
 
         if isinstance(citations, list):
-            return [str(item) for item in citations]
-        return [str(citations)]
+            extracted = [str(item) for item in citations]
+        elif citations:
+            extracted = [str(citations)]
+        else:
+            extracted = []
+
+        retrieved_nodes = retrieval.get("retrieved_nodes")
+        if isinstance(retrieved_nodes, list):
+            for node in retrieved_nodes:
+                if not isinstance(node, dict):
+                    continue
+                node_id = node.get("id")
+                title = node.get("title")
+                if title and node_id:
+                    extracted.append(f"{title} ({node_id})")
+                elif title:
+                    extracted.append(str(title))
+                elif node_id:
+                    extracted.append(str(node_id))
+
+        return list(dict.fromkeys(item for item in extracted if item))
 
     def _extract_trace(self, retrieval: Dict[str, Any]) -> str:
         trace_value = retrieval.get("trace") or retrieval.get("debug") or retrieval.get("details")

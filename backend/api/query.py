@@ -40,8 +40,8 @@ async def query_document(request: QueryRequest) -> QueryResponse:
 
     logger.info(f"Processing query for document {request.document_id}: {request.question[:50]}...")
 
-    result = retrieval_service.retrieve(request.document_id, request.question)
-    
+    result = await retrieval_service.retrieve(request.document_id, request.question)
+
     return QueryResponse(
         success=True,
         answer=result["answer"],

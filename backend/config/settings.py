@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     groq_api_key: str
     groq_model: str = "llama-3.3-70b-versatile"
+    groq_timeout_seconds: int = 30
+    groq_max_retries: int = 3
+    groq_backoff_seconds: float = 1.0
+    groq_max_output_tokens: int = 512
+    groq_temperature: float = 0.0
+    groq_top_p: float = 0.95
     pageindex_api_key: str
     pageindex_mode: Optional[str] = None
     pageindex_poll_attempts: int = 20

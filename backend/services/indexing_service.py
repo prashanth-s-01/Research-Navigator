@@ -77,7 +77,8 @@ class IndexingService:
 
         try:
             tree_response = self._wait_for_tree(pageindex_doc_id)
-        except BackendError:
+        except BackendError as exc:
+            write_status("failed", exc.detail or exc.message)
             raise
         except Exception as exc:
             write_status("failed", "tree generation error")
@@ -120,6 +121,7 @@ class IndexingService:
 
     def _wait_for_tree(self, pageindex_doc_id: str) -> Dict[str, Any]:
         attempts = 0
+        last_status = None
         while attempts < settings.pageindex_poll_attempts:
             try:
                 response = self.client.get_tree(pageindex_doc_id, node_summary=True)
@@ -136,19 +138,22 @@ class IndexingService:
                 continue
 
             status = response.get("status") if isinstance(response, dict) else None
+            last_status = status
             retrieval_ready = response.get("retrieval_ready") if isinstance(response, dict) else None
             tree = response.get("tree") if isinstance(response, dict) else response
 
-            if tree and (status in ("completed", "success") or retrieval_ready):
+            if status in ("completed", "success") or retrieval_ready:
                 return response
 
-            logger.info("Waiting for PageIndex tree: attempt %s status=%s", attempts + 1, status)
+            keys = sorted(response.keys()) if isinstance(response, dict) else None
+            logger.info("Waiting for PageIndex tree: attempt %s status=%s keys=%s", attempts + 1, status, keys)
             time.sleep(settings.pageindex_poll_interval_seconds)
             attempts += 1
 
         raise BackendError(
             error_type="PAGEINDEX_TREE_TIMEOUT",
             message="PageIndex tree generation did not complete in time.",
+            detail=f"Last PageIndex status: {last_status}",
         )
 
     def _extract_summaries(self, node: Any) -> Dict[str, str]:
@@ -168,4 +173,3 @@ class IndexingService:
 
         walk(node)
         return summaries
-

@@ -1,7 +1,7 @@
 import os
 import streamlit as st
 from api.client import health_check, upload_pdf, ask_question, BackendClientError
-from utils.notifications import show_error, show_success, show_warning
+from utils.notifications import show_error, show_success, show_warning, show_retry_info
 
 st.set_page_config(page_title="Research Navigator", layout="wide")
 st.title("Research Navigator")
@@ -62,4 +62,13 @@ if submitted:
             else:
                 show_warning(answer.get("answer", "No answer returned."))
         except BackendClientError as exc:
-            show_error(str(exc))
+            if exc.error_type in {"RATE_LIMIT", "TIMEOUT", "PROVIDER_DOWNTIME"}:
+                show_retry_info(
+                    "The Groq provider is temporarily unavailable. Please wait a moment and try again."
+                )
+            elif exc.error_type == "TOKEN_LIMIT_EXCEEDED":
+                show_retry_info(
+                    "The prompt or response exceeded Groq's limits. Try a shorter question."
+                )
+            else:
+                show_error(str(exc))
