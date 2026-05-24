@@ -1,9 +1,12 @@
 from typing import Any, Dict, List, Optional
 
-
 PROMPT_TEMPLATE = """You are a research assistant.
-Use the following source passages to answer the question truthfully, concisely, and with citations.
+Use the following source passages and retrieval context to answer the question truthfully, concisely, and with citations.
 
+Retrieval trace:
+{trace}
+
+Sources:
 {context}
 
 Question:
@@ -23,13 +26,41 @@ def format_source_snippets(snippets: List[str], max_snippets: int = 5) -> str:
     return "\n".join(formatted_snippets) if formatted_snippets else "No sources were provided."
 
 
-def build_groq_prompt(question: str, snippets: List[str], citations: Optional[List[str]] = None) -> str:
-    source_text = format_source_snippets(snippets)
-    citation_text = "\n".join(f"- {citation}" for citation in citations) if citations else ""
-    if citation_text:
-        source_text += f"\nCitations:\n{citation_text}\n"
+def format_citations(citations: Optional[List[Dict[str, Any]]]) -> str:
+    if not citations:
+        return "No citations available."
+    formatted = []
+    for citation in citations:
+        section = citation.get("section") or citation.get("title") or "Unknown section"
+        page = citation.get("page")
+        if page is not None:
+            formatted.append(f"{section} (page {page})")
+        else:
+            formatted.append(str(section))
+    return "\n".join(formatted)
 
-    return PROMPT_TEMPLATE.format(context=source_text, question=question)
+
+def format_trace(trace: Optional[List[str]]) -> str:
+    if not trace:
+        return "No retrieval trace available."
+    return " → ".join(trace)
+
+
+def build_groq_prompt(
+    question: str,
+    snippets: List[str],
+    trace: Optional[List[str]] = None,
+    citations: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    source_text = format_source_snippets(snippets)
+    trace_text = format_trace(trace)
+    citation_text = format_citations(citations)
+
+    return PROMPT_TEMPLATE.format(
+        trace=trace_text,
+        context=source_text + "\n\nCitations:\n" + citation_text,
+        question=question,
+    )
 
 
 def extract_retrieval_snippets(retrieval: Dict[str, Any], max_snippets: int = 5) -> List[str]:
@@ -75,14 +106,13 @@ def extract_retrieval_snippets(retrieval: Dict[str, Any], max_snippets: int = 5)
             if not isinstance(node, dict):
                 continue
             relevant_contents = node.get("relevant_contents")
-            if not isinstance(relevant_contents, list):
-                continue
-            for group in relevant_contents:
-                items = group if isinstance(group, list) else [group]
-                for item in items:
-                    if isinstance(item, dict) and item.get("relevant_content"):
-                        snippets.append(str(item["relevant_content"]))
-                    elif isinstance(item, str):
-                        snippets.append(item)
+            if isinstance(relevant_contents, list):
+                for group in relevant_contents:
+                    items = group if isinstance(group, list) else [group]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("relevant_content"):
+                            snippets.append(str(item["relevant_content"]))
+                        elif isinstance(item, str):
+                            snippets.append(item)
 
     return [snippet for snippet in snippets if snippet][:max_snippets]
