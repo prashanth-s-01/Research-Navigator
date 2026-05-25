@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt backend/requirements.txt
+COPY frontend/requirements.txt frontend/requirements.txt
+
+RUN pip install --no-cache-dir -r backend/requirements.txt \
+    && pip install --no-cache-dir -r frontend/requirements.txt
+
+COPY backend backend
+COPY frontend frontend
+COPY scripts scripts
+
+ENV BACKEND_URL=http://127.0.0.1:8000
+ENV STORAGE_PATH=/app/shared
+ENV MAX_UPLOAD_SIZE_MB=10
+
+EXPOSE 8501
+
+CMD ["./scripts/render-start.sh"]
