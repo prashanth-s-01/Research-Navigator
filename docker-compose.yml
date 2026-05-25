@@ -24,7 +24,7 @@ services:
       - PAGEINDEX_POLL_INTERVAL_SECONDS=${PAGEINDEX_POLL_INTERVAL_SECONDS:-2}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - STORAGE_PATH=/app/shared
-      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
+      - MAX_UPLOAD_SIZE_MB=10
     volumes:
       - ./shared:/app/shared
 

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     pageindex_poll_attempts: int = 20
     pageindex_poll_interval_seconds: int = 2
     storage_path: str = "/app/shared"
-    max_upload_size_mb: int = 100
+    max_upload_size_mb: int = 10
 
 
 settings = Settings()

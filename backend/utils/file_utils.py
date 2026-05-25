@@ -2,11 +2,13 @@ import os
 import logging
 from pathlib import Path
 
+from config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 PDF_MAGIC_BYTES = b"%PDF"
 MIN_PDF_SIZE = 100
-MAX_PDF_SIZE = 100 * 1024 * 1024
+MAX_PDF_SIZE = settings.max_upload_size_mb * 1024 * 1024
 
 
 def validate_pdf_file(file_data: bytes, filename: str) -> dict:
@@ -44,7 +46,10 @@ def validate_pdf_file(file_data: bytes, filename: str) -> dict:
     if len(file_data) > MAX_PDF_SIZE:
         return {
             "is_valid": False,
-            "error_msg": f"File is too large ({len(file_data) / 1024 / 1024:.1f} MB). Maximum size is 100 MB.",
+            "error_msg": (
+                f"File is too large ({len(file_data) / 1024 / 1024:.1f} MB). "
+                f"Maximum size is {settings.max_upload_size_mb} MB."
+            ),
             "error_type": "FILE_TOO_LARGE"
         }
 
