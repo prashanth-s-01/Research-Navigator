@@ -1,9 +1,8 @@
-import json
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import requests
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException, Timeout
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -14,51 +13,68 @@ class BackendClientError(Exception):
         self.error_type = error_type
 
 
-def health_check() -> dict:
+def _build_url(path: str) -> str:
+    return f"{BACKEND_URL.rstrip('/')}{path}"
+
+
+def _parse_error_response(response: requests.Response) -> Dict[str, Optional[str]]:
     try:
-        response = requests.get(f"{BACKEND_URL}/health", timeout=10)
+        payload = response.json()
+        return {
+            "message": payload.get("message") if isinstance(payload, dict) else response.text,
+            "error_type": payload.get("error_type") if isinstance(payload, dict) else None,
+        }
+    except ValueError:
+        return {"message": response.text, "error_type": None}
+
+
+def _raise_request_error(exc: RequestException) -> None:
+    error_type = None
+    message = str(exc)
+    response = getattr(exc, "response", None)
+
+    if isinstance(exc, Timeout):
+        error_type = "TIMEOUT"
+        message = "The request timed out. Please try again."
+    elif response is not None:
+        parsed = _parse_error_response(response)
+        message = parsed.get("message") or message
+        error_type = parsed.get("error_type")
+
+    raise BackendClientError(message, error_type=error_type)
+
+
+def health_check() -> Dict[str, Any]:
+    try:
+        response = requests.get(_build_url("/health"), timeout=10)
         response.raise_for_status()
         return response.json()
     except RequestException as exc:
-        raise BackendClientError(f"Unable to reach backend: {exc}")
+        _raise_request_error(exc)
 
 
-def upload_pdf(file_path: str) -> dict:
+def upload_pdf(file_path: str) -> Dict[str, Any]:
     try:
         with open(file_path, "rb") as handle:
             response = requests.post(
-                f"{BACKEND_URL}/upload/pdf",
+                _build_url("/upload/pdf"),
                 files={"file": (os.path.basename(file_path), handle, "application/pdf")},
-                timeout=30,
+                timeout=60,
             )
         response.raise_for_status()
         return response.json()
     except RequestException as exc:
-        raise BackendClientError(f"Upload failed: {exc}")
+        _raise_request_error(exc)
 
 
-def _parse_error_response(response: requests.Response) -> dict:
-    try:
-        return response.json()
-    except ValueError:
-        return {"message": response.text}
-
-
-def ask_question(document_id: str, question: str) -> dict:
+def ask_question(document_id: str, question: str) -> Dict[str, Any]:
     try:
         response = requests.post(
-            f"{BACKEND_URL}/query/",
+            _build_url("/query/"),
             json={"document_id": document_id, "question": question},
-            timeout=30,
+            timeout=60,
         )
         response.raise_for_status()
         return response.json()
     except RequestException as exc:
-        error_type = None
-        message = str(exc)
-        response = getattr(exc, "response", None)
-        if response is not None:
-            payload = _parse_error_response(response)
-            message = payload.get("message", message)
-            error_type = payload.get("error_type")
-        raise BackendClientError(f"Query failed: {message}", error_type=error_type)
+        _raise_request_error(exc)

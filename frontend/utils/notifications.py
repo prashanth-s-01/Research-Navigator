@@ -13,5 +13,9 @@ def show_success(message: str) -> None:
     st.success(message)
 
 
+def show_info(message: str) -> None:
+    st.info(message)
+
+
 def show_retry_info(message: str) -> None:
     st.info(f"Retry guidance: {message}")
