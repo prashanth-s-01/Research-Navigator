@@ -27,20 +27,6 @@ def init_session_state() -> None:
     if "notes" not in st.session_state:
         st.session_state.notes = []
 
-
-def render_sidebar() -> None:
-    with st.sidebar:
-        st.header("Research Navigator")
-        st.markdown("A Streamlit frontend for PageIndex + Groq retrieval.")
-        st.markdown("---")
-        st.markdown("**Backend URL**")
-        st.code(BACKEND_URL)
-        st.markdown("**Upload limit**")
-        st.write(f"{MAX_UPLOAD_SIZE_MB} MB")
-        st.markdown("---")
-        st.info("Use the Upload section to submit a PDF, then ask questions in the Query section.")
-
-
 def display_api_error(exc: BackendClientError) -> None:
     if exc.error_type in {"RATE_LIMIT", "TIMEOUT", "PROVIDER_DOWNTIME"}:
         show_error(exc.args[0])
@@ -188,7 +174,6 @@ def render_results() -> None:
 
 def main() -> None:
     init_session_state()
-    render_sidebar()
 
     st.header("Research Navigator")
     st.write("Upload PDFs, ask questions, and inspect retrieval traces and citations.")
